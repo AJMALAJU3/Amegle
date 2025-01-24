@@ -1,14 +1,6 @@
 import { UserState } from "../store/slices/userSlice";
 import * as wss from "./wss";
-import Peer, { SignalData } from "simple-peer";
-
-const getConfiguration = (): RTCConfiguration => ({
-    iceServers: [
-        {
-            urls: "stun:stun.l.google.com:19302"
-        }
-    ]
-});
+import Peer from "peerjs";
 
 const defaultConstraints: MediaStreamConstraints = {
     audio: true,
@@ -16,7 +8,7 @@ const defaultConstraints: MediaStreamConstraints = {
 };
 
 let localStream: MediaStream | null = null;
-let peers: Record<string, Peer.Instance> = {};
+let peers: any = {};
 let streams: MediaStream[] = [];
 
 export const getLocalPreviewAndInitRoomConnection = async (
@@ -24,7 +16,6 @@ export const getLocalPreviewAndInitRoomConnection = async (
     roomId: string | null = null
 ): Promise<void> => {
     try {
-
         localStream = await navigator.mediaDevices.getUserMedia(defaultConstraints);
         console.log("Successfully received local stream");
 
@@ -40,54 +31,49 @@ export const getLocalPreviewAndInitRoomConnection = async (
     }
 };
 
-export const prepareNewPeerConnection = (connUserSocketId: string, isInitiator: boolean): void => {
-    if (!localStream) {
-        console.error("Local stream not available.");
-        return;
+export const prepareNewPeerConnection = (connUserSocketId: any, isInitiator: boolean) => {
+    try {
+        if (!localStream) {
+            console.error("localStream is not initialized!");
+            return;
+        }
+
+        console.log("prepareNewPeerConnection function", connUserSocketId, isInitiator);
+
+        peers[connUserSocketId] = new Peer();
+
+        peers[connUserSocketId].on("open", (id) => {
+            console.log("Peer ID:", id);
+        });
+
+        peers[connUserSocketId].on("call", (call) => {
+            call.answer(localStream!);
+            call.on("stream", (remoteStream) => {
+                console.log("New stream received");
+                addStream(remoteStream, connUserSocketId);
+                streams.push(remoteStream);
+            });
+        });
+
+        const call = peers[connUserSocketId].call(connUserSocketId, localStream!);
+        call.on("stream", (remoteStream) => {
+            console.log("New stream received");
+            addStream(remoteStream, connUserSocketId);
+            streams.push(remoteStream);
+        });
+    } catch (error) {
+        console.error("Error creating PeerJS object:", error);
     }
-
-    console.log('prepare new peer', connUserSocketId )
-    const configuration = getConfiguration();
-
-    const peer = new Peer({
-        initiator: isInitiator,
-        config: configuration,
-        stream: localStream
-    });
-    peers[connUserSocketId] = peer;
-
-    peer.on("signal", (signal: SignalData) => {
-        console.log("Sending signal to peer:", connUserSocketId);
-        wss.signalPeerData({ signal, connUserSocketId });
-    });
-
-    peer.on("stream", (stream: MediaStream) => {
-        console.log("Received new stream from peer:", connUserSocketId);
-        addStream(stream, connUserSocketId);
-        streams.push(stream);
-    });
-
-    peer.on("error", (err: Error) => {
-        console.error(`Peer connection error (${connUserSocketId}):`, err);
-    });
-
-    peer.on("close", () => {
-        console.log(`Connection closed for peer: ${connUserSocketId}`);
-        removeStream(connUserSocketId);
-    });
 };
 
-
-export const handleSignalData = (data: { connUserSocketId: string; signal: SignalData }): void => {
-    const { connUserSocketId, signal } = data;
+export const handleSignalData = (data: { connUserSocketId: string; signal: any }): void => {
+    const { connUserSocketId } = data;
     if (peers[connUserSocketId]) {
-        peers[connUserSocketId].signal(signal);
+        console.log(`Handling signal data for peer: ${connUserSocketId}`);
     } else {
         console.warn(`⚠️ Peer connection not found for: ${connUserSocketId}`);
     }
 };
-
-
 
 ///////////////////// UI VIDEO FUNCTIONS /////////////////////
 const showLocalVideoPreview = (stream: MediaStream): void => {
@@ -108,7 +94,6 @@ const showLocalVideoPreview = (stream: MediaStream): void => {
     videosContainer.appendChild(videoContainer);
 };
 
-
 const addStream = (stream: MediaStream, connUserSocketId: string): void => {
     console.log("➕ Adding new peer video:", connUserSocketId);
 
@@ -128,10 +113,6 @@ const addStream = (stream: MediaStream, connUserSocketId: string): void => {
     videosContainer.appendChild(videoContainer);
 };
 
-/**
- * Remove peer's video stream from UI when they disconnect
- * @param connUserSocketId string
- */
 const removeStream = (connUserSocketId: string): void => {
     console.log("➖ Removing peer video:", connUserSocketId);
 

@@ -1,6 +1,6 @@
 import io from 'socket.io-client';
 import { UserState } from '../store/slices/userSlice';
-import * as webRTCHandler from './webRTCHandler'
+import * as webRTCHandler from "./webRTCHandler"
 import { SignalData } from 'simple-peer';
 
 const SERVER = 'http://localhost:5002';
@@ -66,12 +66,12 @@ export const joinRoom = (user: any, roomId: string) => {
 };
 
 
-export const signalPeerData = (data: { signal: SignalData, connUserSocketId: string }) => {
+export const signalPeerData = ({ signal, connUserSocketId}:{ signal: SignalData, connUserSocketId: string }) => {
   if (!socket) {
     console.error('Socket not initialized. Cannot send signal data.');
     return;
   }
-
+  const data = {signal, connUserSocketId}
   console.log('Sending signaling data to peer...');
   socket.emit('conn-signal', data);
 };
